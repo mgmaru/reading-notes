@@ -1,5 +1,7 @@
 # ブルー・オーシャン戦略 競争のない世界を創造する
 
+<img src="./images/blue_ocean_strategy.jpg" width="50%" style="display:block;margin:0">
+
 - 著者: W・チャン・キム, レネ・モボルニュ 
 - 出版社: ランダムハウス講談社
 - 版: 第1版14刷（2006/7/31）
