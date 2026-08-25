@@ -54,5 +54,6 @@ grep -rn "未回収" .
 ├── template.md
 ├── engineering/   技術書
 ├── business/      簿記・経営など
-└── marketing/     マーケティング
+├── marketing/     マーケティング
+└── lifestyle/     暮らし・習慣・自己啓発
 ```
