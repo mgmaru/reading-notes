@@ -42,4 +42,35 @@
 
 反対に、80番ポートで待ち受けるプログラムがなければ、そこへ新しいTCP接続は成立しません。ただし、これは「ファイアウォールが遮断した」という意味ではありません。また、待ち受けていても、ローカルホストだけに紐づけている場合や、ルーター・ファイアウォールで通信が届かない場合は、外部から接続できません。
 
+### 3. 自分のPCで両方向を遮断できるか／OSによる違い
+
+**はい。内向き・ローカルポート80も、外向き・リモートポート80も、自分のPCのファイアウォールで遮断できます。** ただし、それぞれ対象とする通信が違うため、両方を遮断したければ両方に対応するルールを設定します。
+
+| 遮断したい通信 | Windowsで指定する条件 | UbuntuのUFWで指定する条件 |
+| --- | --- | --- |
+| 外部から自分のPCのTCP/80へ来る通信 | `Inbound`（内向き）＋`LocalPort 80` | `in`＋宛先ポート80 |
+| 自分のPCから外部のTCP/80へ行く通信 | `Outbound`（外向き）＋`RemotePort 80` | `out`＋宛先ポート80 |
+
+Windows では「ローカル／リモート」は**自分のPCから見た位置**を表します。一方、以下のUFWの例では `to any port 80` が**その通信の宛先ポート**を表すため、内向きなら自分側の80番、外向きなら相手側の80番になります。Windows では管理画面または PowerShell、Ubuntu では UFW などを使って設定します。Linux で使うツールはディストリビューションや環境によって異なります（[Microsoft Learn：ファイアウォールルールの設定](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/configure)、[Ubuntu：UFWマニュアル](https://manpages.ubuntu.com/manpages/jammy/man8/ufw.8.html)）。
+
+設定例（**自分のPCで実行する場合**。各行は別々のルール）：
+
+```powershell
+# Windows PowerShell：外部から自分のPCのTCP/80への接続を遮断
+New-NetFirewallRule -DisplayName "Block inbound TCP 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Block
+
+# Windows PowerShell：自分のPCから外部のTCP/80への接続を遮断
+New-NetFirewallRule -DisplayName "Block outbound TCP 80" -Direction Outbound -Protocol TCP -RemotePort 80 -Action Block
+```
+
+```bash
+# Ubuntu（UFW）：外部から自分のPCのTCP/80への接続を遮断
+sudo ufw deny in proto tcp to any port 80
+
+# Ubuntu（UFW）：自分のPCから外部のTCP/80への接続を遮断
+sudo ufw deny out proto tcp to any port 80
+```
+
+Windows の `New-NetFirewallRule` には `-Direction`・`-LocalPort`・`-RemotePort` を指定できます（[Microsoft Learn：New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)）。UFW のルールは、UFW が有効なときに適用されます。Ubuntu では `sudo ufw status` で状態を確認できます（[Ubuntu Server：ファイアウォール](https://ubuntu.com/server/docs/firewalls/)）。また、Windows ファイアウォールは既定で、要求していない内向き通信を遮断し、外向き通信を許可します。既定の動作や既存のルールも確認してから、必要なルールを判断します（[Microsoft Learn：Windows ファイアウォールの概要](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/)）。
+
 **覚え方：** ブラウザで外のHTTPサイトを見るときは「**相手の80番へ行く**」、自分のPCでHTTPサーバーを公開するときは「**自分の80番で待つ**」です。設定を確認するときは、`TCP`・`内向き/外向き`・`ローカル/リモートのポート`をセットで読みます。
