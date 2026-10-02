@@ -1,4 +1,4 @@
-# 『おうちで学べるセキュリティの基本』2026-10-2 疑問11・12：Cookieとセッション
+# 『おうちで学べるセキュリティの基本』2026-10-2 疑問11・12と追加疑問：Cookieとセッション
 
 ## 疑問
 
@@ -26,6 +26,37 @@
 | ログイン中のアカウントID | どのアカウントで認証されているか | 同じアカウントを複数の端末から使うこともある |
 
 **Cookie自体が必ずセッションIDとは限りません。** 言語設定や分析用の識別子など、別の値も保存できます。また、ログインしていない利用者にもセッションを作れます（[RFC 6265：Cookieの用途](https://www.rfc-editor.org/rfc/rfc6265.html#section-2)、[OWASP：匿名ユーザーのセッション](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#introduction)）。
+
+## 追加疑問：最初のページ表示中、どのリクエストにセッションIDが付くか？
+
+> 1ページの表示には複数のリクエストが発生する。サーバーがセッションIDを送っても、ブラウザがまだ保存していない間に送ったリクエストにはIDが付かないのか？
+
+**はい。ブラウザがセッションIDを入れたCookieを受け取り、保存してから作るリクエストに、そのIDを付けられます。** 保存前に送信済みのリクエストへ、後からIDが追加されることはありません。「保存」はブラウザがCookieを利用できる状態にすることであり、必ずしもディスクへ書き込むことを意味しません（[RFC 6265：Cookieの保存と送信](https://www.rfc-editor.org/rfc/rfc6265.html#section-4.1.2)、[MDN：Cookieの仕組み](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies)）。
+
+次は、同じサイトへのリクエストが並行して起きる場合の**説明用の例**です。`ABC` は仮のセッションIDです。
+
+```text
+時刻  ブラウザ（クライアント）                  Webアプリ（サーバー）
+ ①   GET /page        ── sid なし ──────────→  セッションを作成
+ ②   GET /api/data    ── sid なし ──────────→  ①の応答を処理する前に送信
+ ③                    ←── Set-Cookie: sid=ABC  ①への応答
+ ④   Cookieを保存：sid=ABC
+ ⑤   GET /style.css   ── Cookie: sid=ABC ──→  保存後に送信
+```
+
+| リクエストを作る時点 | `sid=ABC` は付くか | 理由 |
+| --- | --- | --- |
+| ③の応答をブラウザが処理する前 | **付かない** | ブラウザにまだそのCookieがない |
+| ④で保存した後 | **条件が合えば付く** | 保存済みのCookieを `Cookie` ヘッダーで送る |
+| 保存前に送信済み | **後からは付かない** | 送信済みのリクエストは書き換わらない |
+
+したがって、**最初のページ表示に関わるリクエストでも、開始したタイミングによってIDの有無が異なります。** たとえば、HTMLの応答に含まれる `Set-Cookie` を保存した後にCSSや画像を要求するなら、それらのリクエストにもIDが付きます。保存後は、HTML・CSS・画像・APIなどの種類に関係なく、Cookieの送信先と一致するリクエストに同じIDを繰り返し送ります（サーバーがIDを更新するまで）。[RFC 6265：Cookieヘッダー](https://www.rfc-editor.org/rfc/rfc6265.html#section-5.4)
+
+ただし、保存後でも常に付くわけではありません。
+
+- Cookieの `Domain`・`Path`・`Secure`・`SameSite` などの条件に合わない宛先には送られません。たとえば、無関係な別ドメインにある画像には、そのサイトのCookieは通常送られません（[MDN：Cookieを送る範囲](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies#define_where_cookies_are_sent)）。
+- ブラウザのキャッシュから読み込む場合は、サーバーへのリクエスト自体が発生しないことがあります。
+- Cookieが送られても、サーバーがCSSや画像の処理でセッションIDを**使うとは限りません**。Cookieを付けるかどうかと、サーバーがその値を利用するかどうかは別です。
 
 ## 回答：疑問12
 
