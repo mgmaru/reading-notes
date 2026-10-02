@@ -4,6 +4,8 @@
 
 1. 自分のPCの80番ポートをファイアウォールで遮断すると、Webサーバーへのアクセスと、外部から自分のPCの80番ポートへのアクセスは両方できなくなるのか？
 2. 自分のPCで80番ポートが使われていて、ファイアウォールでは遮断していない場合、外部のWebサーバーにはアクセスできるが、自分のPCへの80番ポート宛てのアクセスは遮断されるのか？
+3. 内向き・ローカルポートと外向き・リモートポートは、どちらも自分のPCのファイアウォールで遮断できるのか？WindowsとLinuxで設定方法は違うのか？
+4. Linuxサーバーの設定を、CLI以外の画面やOSSのツールで管理できるのか？
 
 ## 回答
 
@@ -72,5 +74,20 @@ sudo ufw deny out proto tcp to any port 80
 ```
 
 Windows の `New-NetFirewallRule` には `-Direction`・`-LocalPort`・`-RemotePort` を指定できます（[Microsoft Learn：New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)）。UFW のルールは、UFW が有効なときに適用されます。Ubuntu では `sudo ufw status` で状態を確認できます（[Ubuntu Server：ファイアウォール](https://ubuntu.com/server/docs/firewalls/)）。また、Windows ファイアウォールは既定で、要求していない内向き通信を遮断し、外向き通信を許可します。既定の動作や既存のルールも確認してから、必要なルールを判断します（[Microsoft Learn：Windows ファイアウォールの概要](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/)）。
+
+### 4. Linuxサーバーの設定を管理するOSS
+
+Linuxサーバーには、**ブラウザやデスクトップ画面から操作するツール**と、**設定をファイルに記述して適用するツール**があります。ファイアウォールだけでなく、サービスやユーザーなどを扱えるものもあります。
+
+| ツール | 操作方法と主な用途 | 80番ポートの設定との関係 |
+| --- | --- | --- |
+| [Cockpit](https://cockpit-project.org/) | ブラウザからサービス、ログ、ストレージ、ネットワークなどを管理 | ファイアウォール画面は **firewalld** を使う。現在は既定ゾーンの定義済みサービスを表示・追加・削除する機能に限られ、UFWのルールや外向きTCP/80の遮断をその画面から設定する用途には合わない（[公式資料](https://docs.cockpit-project.org/cockpit-guide/latest/guide/feature-firewall.html)）。 |
+| [Webmin](https://webmin.com/docs/intro/) | ブラウザからユーザー、パッケージ、サービス、ネットワーク設定などを管理 | [nftables用モジュール](https://webmin.com/docs/modules/nftables/)では `input`・`output` のルールや、送信元・宛先ポートを編集できる。 |
+| [Gufw](https://github.com/costales/gufw) | デスクトップ画面からUFWを操作 | UFWのGUI。ブラウザで遠隔管理する画面ではなく、画面を備えたLinux環境向け。 |
+| [Ansible](https://docs.ansible.com/projects/ansible/latest/getting_started/introduction.html) | YAML形式の設定ファイルを使い、SSH経由で複数のサーバーの設定を適用 | [UFW用モジュール](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html)に `direction: in/out`、`to_port: '80'`、`rule: deny` を指定できる。 |
+
+**今回のUFW設定を複数のUbuntuサーバーでそろえるなら、Ansibleが適しています。** 設定内容をファイルで管理でき、同じ設定を繰り返し適用できます。UFW用モジュールは `community.general` コレクションに含まれ、`ansible-core` だけには含まれません（[AnsibleのUFWモジュール資料](https://docs.ansible.com/projects/ansible/latest/collections/community/general/ufw_module.html)）。
+
+一方、サーバーの状態をブラウザで確認しながら操作したいならCockpitやWebminが候補です。ただし、**操作画面によって管理するファイアウォールの仕組みが違います**。先ほどのUFWコマンドを使っているサーバーで、Cockpitのファイアウォール画面が同じUFWルールを編集するわけではありません。また、WebminのnftablesモジュールとUFWなど、複数のツールで有効なルールを同時に変更すると、変更が上書きされたり見えにくくなったりします。どの仕組みでルールを管理するかを決めて使います（[Cockpitのファイアウォール資料](https://docs.cockpit-project.org/cockpit-guide/latest/guide/feature-firewall.html)、[Webminのnftables資料](https://webmin.com/docs/modules/nftables/)）。
 
 **覚え方：** ブラウザで外のHTTPサイトを見るときは「**相手の80番へ行く**」、自分のPCでHTTPサーバーを公開するときは「**自分の80番で待つ**」です。設定を確認するときは、`TCP`・`内向き/外向き`・`ローカル/リモートのポート`をセットで読みます。
