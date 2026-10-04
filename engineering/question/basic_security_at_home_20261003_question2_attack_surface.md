@@ -188,3 +188,58 @@ Linuxで443番の待ち受けとホストのファイアウォール変更に必
 **ポートを再公開しなくても侵害を続ける方法がある**ことも重要です。攻撃者がサーバーでプログラムを実行でき、外向き通信が許されていれば、サーバーから外部へ接続してトンネルを作り、閉じた内向きポートをそのままに通信する場合があります。SSHの転送機能はそのような通信を構成できる正規の機能です。したがって「外から443番が閉じている」という確認だけでは、侵害がないことの証明にはなりません（[OpenSSH：TCP転送](https://man.openbsd.org/ssh.1)、[CISA：外向きSSH接続と逆向きトンネルを使った事例](https://www.cisa.gov/sites/default/files/2024-07/csa-cisa-red-team%27s-operations-against-a-fceb-organization-highlights-the-necessity-of-defense-in-depth_0.pdf)）。
 
 守るときは、①管理用のSSH・RDP・VPNを必要な接続元に限定し認証を強化する、②サービス用アカウントとクラウドのロールには必要最小限の権限だけを与える、③待ち受け・ホストのファイアウォール・クラウドの通信ルールを定期的に照合する、④ルール変更や異常な外向き通信を記録・調査する、という順で考えます。AWSならEC2のAPI変更をCloudTrailで追え、AWS ConfigでSSHを全インターネットへ許可するルールを検出できます（[AWS：CloudTrailによるEC2操作の記録](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/monitor-with-cloudtrail.html)、[AWS Config：`restricted-ssh`](https://docs.aws.amazon.com/config/latest/developerguide/restricted-ssh.html)）。
+
+## 追加疑問（2026-10-4：管理者権限とLinuxでのプログラム実行）
+
+### 7. サーバーの管理者権限を奪われても、アプリを乗っ取れるとは限らないか？
+
+> 万が一、サーバーの管理者権限が奪われても、そのサーバーで動いているプログラムやアプリケーションを乗っ取れるとは限らない、という認識でよいか？
+
+**「アプリの管理者アカウントを自動的に取得するわけではない」という意味では、その認識で合っています。しかし、同じLinuxホストの `root` 権限を完全に奪われた場合、通常はそのホスト上のアプリも侵害されたものとして扱うべきです。** OSの管理者権限とアプリ内のログイン権限は別ですが、アプリの認証画面が、アプリを動かすOSの管理者からアプリ自体を守る境界になるとは限りません。
+
+```text
+Linuxホストのroot権限
+    ├─ 同じホストのアプリのファイル・設定・プロセスに広く影響できる
+    │    └─ アプリの動作や、そのホストで扱うデータを変え得る
+    └─ 別のサーバー・クラウド・外部の認証基盤には、その権限だけでは入れない
+         └─ ただし、ホストから利用できる認証情報やロールがあれば影響が広がり得る
+```
+
+たとえば、アプリのログインに成功していなくても、ホスト上のアプリ本体や設定を変更できれば、認証処理を含めて挙動を変えられます。また、プロセスを調査・操作できる権限があれば、実行中のアプリが扱う情報にも影響し得ます。これはLinuxのファイル権限と `CAP_SYS_PTRACE` などの仕組みから導かれる**一般的なリスク**であり、実際に何ができるかはOS設定やアプリ構成で変わります（[Linux：ファイル権限と管理権限](https://man7.org/linux/man-pages/man7/path_resolution.7.html)、[Linux：プロセスの調査・操作権限](https://man7.org/linux/man-pages/man2/ptrace.2.html)）。
+
+| 奪われた権限 | 同じホストのアプリへの影響 | 別のシステムへの影響 |
+| --- | --- | --- |
+| アプリ内の管理者アカウントだけ | アプリが許す管理操作ができる。これだけでOSの `root` にはならない | アプリが連携する範囲に限られる |
+| Linuxの一般ユーザーや一部の `sudo` 権限 | そのユーザーに許されたファイル・プロセス・コマンドに影響する | 利用できる認証情報や接続先の権限に依存する |
+| **ホスト全体の `root` 権限** | **通常はアプリのファイル・設定・プロセスを操作できるため、アプリの安全性を前提にできない** | 別システムの認証・認可は別。ただし、ホスト上で利用できる認証情報があれば悪用され得る |
+
+ここでいう `root` は**ホスト全体の管理権限**です。コンテナ内の `root` は、そのままホスト側の `root` ではありません。また、Linuxの権限は細かい能力（capability）に分けられ、SELinuxなどの制限が適用される環境もあります。したがって「管理者」という名前だけで権限範囲を決めつけず、**どのホスト・名前空間・権限で操作できるか**を確認します（[Linux：capability](https://man7.org/linux/man-pages/man7/capabilities.7.html)、[Linux：ユーザー名前空間](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)、[Red Hat：SELinuxによる利用者の制限](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/using_selinux/managing-confined-and-unconfined-users_using-selinux)）。
+
+別のデータベースやクラウドAPIには、引き続きその側の認証・認可が必要です。ただし、**アプリが使う資格情報を侵害されたホスト上で利用できるなら、その権限まで影響が及び得ます。** たとえばAWSのEC2インスタンスロールの一時的な認証情報はインスタンス上のアプリが利用でき、許されるAPI操作はロールのポリシーで決まります（[AWS：EC2インスタンス上のアプリにIAMロールを与える仕組み](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2.html)）。
+
+### 8. 外部の攻撃者がLinux上で悪意あるプログラムを実行するには、どの権限が必要か？
+
+> 外部の攻撃者がサーバーに侵入し、悪意あるプログラムを実行できるには、Linuxでどの権限が必要か？
+
+**プログラムの実行に `root` 権限は必須ではありません。** 必要なのは、まず外部からログインやアプリの欠陥などを通じて**OS上の何らかの実行経路**を得ること、その経路で動くユーザー・プロセスに**実行が許されていること**です。攻撃者がSSHでログインするとは限らず、Webアプリの欠陥を通して、既存のアプリプロセス内で意図しない処理を実行する場合もあります（[OWASP：OSコマンド注入と最小権限](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html)、[Linux：プロセスのユーザーIDと権限](https://man7.org/linux/man-pages/man7/credentials.7.html)）。
+
+```text
+外部の攻撃者
+    ├─ SSHなどの認証を突破 → ログインしたLinuxユーザーの権限で実行
+    └─ Webアプリなどのコード実行の欠陥 → そのアプリプロセスの権限で実行
+                                      ↓
+                    読めるファイル・変更できる設定・接続先もその権限次第
+```
+
+| 得た入口・権限 | 悪意ある処理を実行できる条件 | その時点での主な限界 |
+| --- | --- | --- |
+| アプリへの通常のログインだけ | アプリが任意の処理の実行を認める機能や、コード実行につながる欠陥が別に必要 | 通常のアプリ操作だけではOSのコマンドは実行できない |
+| 一般ユーザーとしてのSSHログイン | そのアカウントにコマンド実行が許されている | 原則として、そのユーザーが使えるファイル・機能に限られる |
+| Webサービスなどのコード実行の欠陥 | 欠陥を通じて、サービスのプロセスに意図しない処理を実行させる | 原則として、そのプロセスのユーザーID・capability・追加の制限に従う |
+| ホストの `root` 権限 | 通常、広い範囲で実行や設定変更ができる | 別システムの権限や、適用された追加の制限まで自動で消えるわけではない |
+
+Linuxでファイルを直接プログラムとして起動する `execve()` では、実行ファイルや経路上のディレクトリへの権限が必要です。ファイルシステムが `noexec` なら直接起動を拒否する場合もあります。ただし、**直接起動できないことと、悪意ある処理を一切実行できないことは同じではありません。** すでに動くインタープリターが読み込むスクリプトや、侵害された既存プロセス内のコード実行も考慮する必要があります（[Linux：`execve()` と実行時の拒否条件](https://man7.org/linux/man-pages/man2/execve.2.html)、[Linuxカーネル：インタープリターの実行制御](https://docs.kernel.org/userspace-api/check_exec.html)）。
+
+さらに `sudo`、SELinux、seccompなどの設定は、**侵入後にできる操作の範囲**に影響します。たとえば `sudo` は許可するコマンドと実行先ユーザーを指定でき、seccompはプロセスが呼べるシステムコールを制限できます。ただし、単一の制限だけで任意の悪意ある処理を完全に防げると考えず、サービスごとに専用の一般ユーザーを使い、不要な `sudo`・capability・認証情報を与えないことが基本です（[sudoers：許可するコマンドと実行先](https://man7.org/linux/man-pages/man5/sudoers.5.html)、[Linuxカーネル：seccompによるシステムコール制限](https://docs.kernel.org/userspace-api/seccomp_filter.html)、[Red Hat：SELinuxによる利用者の制限](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/using_selinux/managing-confined-and-unconfined-users_using-selinux)）。
+
+**覚え方：**「侵入できたか」「コードを実行できるか」「どの権限で実行されるか」「ほかのシステムに届くか」は別々に確認します。一般ユーザー権限の実行でも問題になり、ホスト全体の `root` まで奪われた場合は、そのホスト上のアプリも含めて調査・復旧の対象になります。
