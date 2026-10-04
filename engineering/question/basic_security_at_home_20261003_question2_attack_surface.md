@@ -43,3 +43,86 @@
 5. **利用者の権限も確かめる。** 一般ユーザー・管理者など、権限別のテストアカウントを使い、他人のデータや管理操作が許されないことを確認します。フロントエンドの表示制御だけでなく、サーバー側で判定します（[OWASP：アクセス制御](https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/)）。
 
 **チェックの限界：** ポートスキャンや脆弱性スキャナーで検出できる問題は一部です。公開していない内部サービス、認可の実装ミス、新しい脆弱性まですべて見つけられるわけではありません。点検は自分が管理するシステムで行い、設定変更後や新規公開時にも繰り返します。なお、2026年版DBIRの初期侵入経路の分析（人為的ミス・内部者の権限悪用に分類される侵害を除く、対象19,905件）では、ソフトウェアの脆弱性悪用が最も多く、**31%** でした。更新は優先度の高い対策ですが、認証や権限の確認も一緒に進めます（[Verizon 2026 DBIR](https://www.verizon.com/business/resources/T1e0/reports/2026-dbir-data-breach-investigations-report.pdf)）。
+
+## 追加疑問（2026-10-4）
+
+### 1. 外部からポートの開閉は分かるか？ サーバーにコマンドを送るのか？
+
+> 外部からどのポートが開いているか、閉じているか分かるのか？ サーバー側に調査用のコマンドを送るのか？
+
+**外部から接続を試し、その応答を見れば推定できます。** これを**ポートスキャン**と呼びます。調査用のコマンドは**調べる側のPC**で実行します。サーバーへ `netstat` などのOSコマンドを実行させるわけではなく、宛先IPアドレスとポート番号を指定した通常のネットワーク通信を送ります。TCPの場合、接続開始の `SYN` パケットに対する反応が手がかりです（[Nmap：TCPスキャンの仕組み](https://nmap.org/book/man-port-scanning-techniques.html)、[RFC 9293：TCP](https://www.rfc-editor.org/rfc/rfc9293.html)）。
+
+```text
+調べる側のPC ── TCP接続を試す ──→ 対象のIPアドレス:443
+                  ← SYN/ACK ─────  接続できる（open と推定）
+                  ← RST ─────────  接続は拒否された（closed と推定）
+                  ← 応答なし等 ───  フィルターの可能性（filtered と推定）
+```
+
+| Nmapの表示 | 外から観測できたこと | 分からないこと |
+| --- | --- | --- |
+| `open` | その接続元から、その時点でTCP接続を受け付ける | アプリに脆弱性があるかどうか |
+| `closed` | 宛先から拒否の応答が返った | サーバー上にアプリがないのか、途中の機器が拒否したのか |
+| `filtered` | フィルターなどで状態を判定できない | サーバー上でアプリが待ち受けているかどうか |
+
+ここでの「開いている／閉じている」は**調べた場所から見た結果**です。同じサーバーでも、社内ネットワークからは `open`、インターネットからは `filtered` となり得ます。応答がないことだけで「サーバー上のサービスは停止している」とは判断できません。UDPはTCPと応答の仕組みが違い、`open|filtered` のように区別できない結果もあります（[Nmap：ポートの状態](https://nmap.org/book/port-scanning.html)）。
+
+たとえば、**自分が管理するホスト**を別のネットワークから確かめるなら、次のように実行できます。`your.example.com` は実際に管理するホスト名へ置き換えます。
+
+```bash
+nmap -sT -Pn -p 22,443,5432 your.example.com
+```
+
+`-sT` はTCP接続を試す方式、`-Pn` は事前のホスト発見を省いて指定先を検査する指定、`-p` は調べるポートです。この例で分かるのは**指定した3つのTCPポートについての観測結果だけ**です。ドメインがプロキシを指していれば、まずプロキシを調べた結果になります。IPv6で公開している場合はIPv6側も別に確認します（[Nmap：TCP接続スキャン](https://nmap.org/book/scan-methods-connect-scan.html)、[Nmap：対象とIPv4/IPv6](https://nmap.org/book/man-target-specification.html)）。
+
+### 2. 「ポートを閉じる」はファイアウォールの設定か？
+
+> 不要なポートを閉じるとは、ファイアウォールで遮断することだけを指すのか？
+
+**「閉じる」は対策の目的を表す言い方で、方法は複数あります。** サーバー上で待ち受けをなくす方法と、サービスを動かしたまま到達範囲を狭める方法を区別します。
+
+| 方法 | サーバー上のサービス | 外部からの接続 |
+| --- | --- | --- |
+| 不要なサービスを停止・削除する | そのポートで待ち受けない | 通常、接続できない |
+| 待ち受け先を `127.0.0.1` や内部IPに限定する | 必要な場所では動かす | 公開IP宛ての直接接続を受け付けない |
+| OSのファイアウォールで遮断する | 動いていてもよい | 許可していない接続元からは届かない |
+| クラウドのセキュリティグループ・ネットワーク構成で制限する | 動いていてもよい | サーバーへ届く前に制限する。公開IPを持たせない構成もある |
+
+たとえばPostgreSQLの `listen_addresses` は、どのネットワークインターフェースで接続を受けるかを指定します。既定の `localhost` は同じマシンからのTCP接続向けです（[PostgreSQL公式資料](https://www.postgresql.org/docs/current/runtime-config-connection.html)）。不要なサービスなら**停止する**のが明確です。業務上必要なら、待ち受け先を限定し、ネットワーク側の通信ルールも合わせて設定します。**ポート番号を別の数字に変えるだけでは、接続を許可したままなので対策の中心にはなりません。** 外からの結果が `closed` か `filtered` かは、どの場所でどう遮断したかによって変わります（[Nmap：ポートの状態](https://nmap.org/book/port-scanning.html)、[AWS：セキュリティグループのルール](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html)）。
+
+### 3. 特定のクライアント・サーバーだけに許可できるか？
+
+> ある接続元からのアクセスは受け付け、それ以外の接続元はブロックできるか？
+
+**できます。** ファイアウォールなどで「**接続元・宛先・通信方向・TCP/UDP・宛先ポート**」を条件にします。たとえば「管理用VPNの出口IPアドレスからサーバーのTCP/22への新しい接続だけを許可する」というルールです。AWSのセキュリティグループでは、接続元をIPアドレスの範囲（CIDR）または別のセキュリティグループで指定できます。許可ルールがない受信通信は通しません（[AWS：セキュリティグループのルール](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html)）。
+
+```text
+管理用VPNの出口IP ── TCP/22 ──→ サーバー：許可
+それ以外の接続元 ─── TCP/22 ──× サーバー：不許可
+一般の利用者 ─────── TCP/443 ─→ 公開Webサイト：許可
+```
+
+ただし、**IPアドレスの許可は「その人が誰か」の確認ではありません。** 複数人が同じ出口IPを共有することや、接続元IPが変わることがあります。ログイン認証、多要素認証、アプリ内の権限チェックも必要です。IPv4だけを絞ってIPv6を公開したままにしないよう、両方の通信ルールを確認します（[AWS：IPv4・IPv6と接続元の指定](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/changing-security-group.html)）。
+
+### 4. プロキシだけがオリジンに接続できる構成は有効か？
+
+> 不特定多数のクライアントはプロキシを経由し、オリジンサーバーはプロキシからの接続だけを許可すれば安全性が上がるか？
+
+**有効です。** この用途のプロキシは通常**リバースプロキシ**と呼び、利用者からの要求を受けてオリジンへ転送します。オリジンは、プロキシからアプリ用ポートへの接続だけを許可し、利用者からの直接接続を遮断します（[NGINX：`proxy_pass`](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)、[AWS：ロードバランサーの接続元だけを許可](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-update-security-groups.html)）。
+
+```text
+利用者（不特定多数） ─ HTTPS/443 ─→ リバースプロキシ
+                                      │
+                                      └─ アプリ用ポート ─→ オリジン
+利用者 ───────────────────────────────×→ オリジンへの直接接続
+```
+
+AWSのApplication Load Balancerをプロキシとして使う例なら、ロードバランサーは利用者のHTTPS/443を受け付け、オリジン側のセキュリティグループは**ロードバランサーのセキュリティグループを接続元**として、アプリ用ポートと必要なヘルスチェック用ポートだけを許可します。可能ならオリジンに公開IPを付けず、直接到達できる別経路をなくします（[AWS：推奨ルール](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-update-security-groups.html)）。
+
+この構成では次の点も確認します。
+
+- **プロキシを通った要求も検証する。** オリジンはプロキシから届く悪意ある要求を処理し得ます。ログイン認証、権限チェック、更新は引き続き必要です（[OWASP：アクセス制御](https://top10.owasp.org/2025/A01_2025-Broken_Access_Control/)）。
+- **プロキシとオリジンの間も保護する。** 経路に応じてHTTPS/TLSなどを使います。外部のCDN・プロキシ事業者の共有IPだけを許可しても、自分の契約・設定のプロキシから来たことまでは証明できません。必要ならオリジンでクライアント証明書を検証する仕組みなどを加えます（[Cloudflare：Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/)）。
+- **元の利用者IPを扱う場合はヘッダーを信用する範囲を決める。** 通常のHTTPリバースプロキシでは、オリジンから見た接続元IPはプロキシです。`X-Forwarded-For` などで元の利用者IPを伝えられますが、利用者が送った値をそのまま信じず、信頼できるプロキシが付けた値だけを扱います（[AWS：`X-Forwarded-For` の注意点](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/x-forwarded-headers.html)、[NGINX：信頼するプロキシの指定](https://nginx.org/en/docs/http/ngx_http_realip_module.html)）。
+
+設定後は、**プロキシ経由で正常に利用できること**と、**自分が管理するオリジンへ外部から直接接続できないこと**を両方確かめます。IPv4・IPv6、管理用ポートなどの別経路も確認します。プロキシを導入しても、オリジンの公開IPへ直接到達できればプロキシ側の制御を回避され得ます（[Cloudflare：オリジンへの直接接続を防ぐ](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/)）。
