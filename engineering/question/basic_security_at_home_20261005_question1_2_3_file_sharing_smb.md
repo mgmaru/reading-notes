@@ -72,3 +72,19 @@ Windowsでは、エクスプローラーで対象フォルダを右クリック�
 **SSHなどを通じて攻撃者が既にPC上でコマンドを実行できるなら、共有をONにする必要は必ずしもありません。** そのアカウントに読み取り権限があるファイルなら、攻撃者は侵入済みの経路から扱える可能性があります。一方、読めないファイルが共有をONにするだけで自動的に読めるようになるわけではありません。共有設定やファイアウォールを変更できるかも、得たアカウントの権限とOSの設定に左右されます。Windowsの共有設定では管理者の承認を求められる操作もあります。したがって、**「SSHで入れた」ことと「全ファイルを読める・共有設定を自由に変えられる」ことは別**です（[Microsoft：ファイルへのアクセス権](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)、[Microsoft：ファイル共有の設定](https://support.microsoft.com/en-us/windows/experience/connectivity-networking/file-sharing-over-a-network-in-windows)、[Apple：共有ユーザーの権限](https://support.apple.com/ja-jp/guide/mac-help/mh17131/27/mac/27)）。
 
 共有サービスの古い方式にも注意します。とくに **SMBv1** は既知の問題が多く、Microsoftは使用しないことを強く勧めています。OSを更新し、不要な共有を止め、必要な場合も接続元と権限を絞ります（[Microsoft：SMBv1の扱い](https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3)、[Microsoft：不要なSMB接続の制限](https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-secure-traffic)）。
+
+## 追加疑問（2026-10-6）：どの設定がそろうとファイルを見られる？
+
+> LAN側の端末間の共有設定とPCのファイアウォールと共有設定次第では、PCのファイルを見ることができるという認識で良い？
+
+**はい、概ねその認識で合っています。** 「LAN側の端末間の共有設定」は、正確には**端末同士の通信が許可されているか**という意味です。ルーターやWi-Fiのアクセスポイントが通信を遮断していれば、相手のPCへ接続できません。通信が許可されていても、さらに共有元PC側の条件を満たす必要があります。
+
+| 確認する場所 | 必要な状態 | 満たさない場合 |
+| --- | --- | --- |
+| **LAN・Wi-Fi側** | 端末同士が通信できる。Wi-Fiのクライアント分離などで遮断されていない | 共有元PCまで接続できない |
+| **共有元PCのファイアウォール** | ファイル共有への受信通信を許可している | ファイル共有への接続が遮断される |
+| **共有元PCの共有設定と権限** | 共有サービスが有効で、対象フォルダが共有され、接続する人に読み取り権限がある | 対象の共有フォルダを開けない |
+
+つまり、**「端末間で通信できる」→「PCが接続を受ける」→「共有フォルダへの閲覧を許す」** の順に確認します。すべてそろっても、見られるのは許可された共有フォルダ内のファイルです。認証が必要な共有なら、許可されたアカウントでのログインも必要です。PC内の全ファイルが自動で見えるわけではありません（[Microsoft：ファイル共有の設定](https://support.microsoft.com/en-us/windows/experience/connectivity-networking/file-sharing-over-a-network-in-windows)、[Apple：共有フォルダと利用者の権限](https://support.apple.com/ja-jp/guide/mac-help/mh17131/27/mac/27)）。
+
+カフェWi-Fiでの端末間通信は、[疑問3：Wi-Fiのクライアント分離](./basic_security_at_home_20261005_question3_wifi_client_isolation.md)も参照してください。なお、Windowsの「ネットワーク探索」は共有元を一覧で見つけやすくする設定です。探索をOFFにするだけでは、アドレスを直接指定した接続まで必ず遮断されるとは限りません（[Cisco Meraki：クライアント分離](https://documentation.meraki.com/Wireless/Operate_and_Maintain/How_Tos/Firewall_and_Traffic_Shaping/Wireless_Client_Isolation)、[Microsoft：SMB通信の制御](https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-secure-traffic)）。
