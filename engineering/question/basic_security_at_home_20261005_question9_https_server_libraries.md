@@ -93,4 +93,34 @@ AのTCP中継プロキシはTLSの中身を復号せず、そのままアプリ�
 
 Cを選ぶときは、**プロキシがアプリ側の証明書を検証すること**も確認します。たとえばNGINXでは、上流HTTPSサーバーの証明書を検証する`proxy_ssl_verify`の既定値は`off`です。必要に応じて信頼するCAを指定し、検証を有効にします（[NGINX：`proxy_ssl_verify`の既定値](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_ssl_verify)、[NGINX：上流サーバーの証明書検証設定](https://docs.nginx.com/nginx/admin-guide/security-controls/securing-http-traffic-upstream/)）。
 
+## 追加質問：A・Cの方が安全？ 暗号化はサーバーだけの役割？
+
+> 1. クライアントからオリジンサーバーまで暗号化されるAまたはCが良いと思います。Bの平文区間では盗聴されませんか？
+> 2. 暗号化はクライアント側ではなくサーバーで設定するもので、サーバーがHTTPSを使うと決めたらクライアントが従う、という理解で良いですか？
+
+### 1. A・Cを選びたい、という考え方について
+
+**プロキシとアプリが別のホストにあり、その間の通信を盗聴・改ざんされる可能性を減らしたいなら、AまたはCを選ぶ考え方は妥当です。** BではプロキシがTLSを復号した後、アプリへのHTTPリクエストと応答がその区間を平文で通ります。その区間を観測・操作できる人や機器があれば、通信内容を読まれたり変えられたりする可能性があります。OWASP ASVSも、内部のHTTPサービス間でTLSなどの適切な通信路暗号化を用いることを確認項目にしています（[OWASP ASVS 5.0、12.3.3](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/en/0x21-V12-Secure-Communication.md)、[NGINX：平文転送と再暗号化の違い](https://docs.nginx.com/nginx/deployment-guides/migrate-hardware-adc/f5-big-ip-configuration/)）。
+
+ただし、**AとCの保護範囲は同じではありません。** AではブラウザとアプリがTLSの両端なので、途中のTCP中継プロキシはHTTPの内容を復号できません。Cではブラウザとプロキシ、プロキシとアプリがそれぞれ別のTLS接続を作ります。両区間の通信は暗号化されますが、プロキシは中継のために一度復号し、HTTPの内容を読めます。URLパスでの振り分けなどが必要ならC、プロキシにもHTTPの内容を見せないならA、という違いがあります（[NGINX：TLS終端と再暗号化](https://docs.nginx.com/nginx/deployment-guides/migrate-hardware-adc/f5-big-ip-configuration/)、[NGINX：TLSを復号しない中継](https://nginx.org/en/docs/stream/ngx_stream_ssl_preread_module.html)）。
+
+Bも、プロキシとアプリが**同じホスト内のUnixソケットやループバック**で通信する場合などは、別ホスト間を平文で流す場合とはリスクが異なります。これは通信経路からの判断であり、「Bなら常に安全」という意味ではありません。どの区間を誰が観測できるかを確認して選びます。なお、A・CでもTLSの接続先を正しく認証する必要があります。特にCでは、前述のとおりプロキシがアプリ側の証明書を検証する設定が重要です（[Caddy：Unixソケット・ループバック・HTTPSの転送先](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)、[OWASP ASVS 5.0、12.3.2〜12.3.4](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/en/0x21-V12-Secure-Communication.md)）。
+
+### 2. HTTPSを使うときのクライアントとサーバーの役割
+
+**サーバー側のHTTPS設定は必要ですが、暗号化はクライアントとサーバーの両方で行います。** クライアント（ブラウザ）は`https://`の宛先への安全な接続を開始し、サーバーの証明書が接続先に合うかを検証します。サーバーはTLSを受け付ける設定と証明書・秘密鍵を用意します。TLSのハンドシェイクで双方が使える方式を調整し、その後は**クライアントが送るHTTPリクエストも、サーバーが返すHTTPレスポンスも**それぞれの送信側で暗号化します。対応する方式で合意できなければ接続は成立しません（[RFC 9110、4.2.2節・4.3.4節](https://www.rfc-editor.org/rfc/rfc9110.html#section-4.2.2)、[RFC 8446、2節・4.1節](https://www.rfc-editor.org/rfc/rfc8446.html#section-2)）。
+
+```text
+ブラウザ（TLSクライアント）                     HTTPSサーバー（TLSサーバー）
+  https:// へ接続・ClientHello  ────────────────>  ClientHelloを受け取る
+  証明書などを受け取る            <───────────────  対応方式を選び、証明書を送る
+  証明書を検証し、双方が通信鍵を計算して接続を確立する
+  HTTPリクエストを暗号化         ════════════════>  復号して処理
+  HTTPレスポンスを復号           <════════════════  応答を暗号化
+```
+
+サーバーは平文HTTPを受け付けず、HTTPSを使えないクライアントからの接続を拒むこともできます。HTTPからHTTPSへ**リダイレクト**する設定もできますが、最初に`http://`で送ったリクエスト自体はTLSで保護されません。ブラウザがそのサイトのHSTSポリシーを既に知っている場合などは、HTTPリクエストを送る前にHTTPSへ切り替えられます。つまり、サーバーが一方的に暗号化を始め、クライアントが受け身で従うわけではありません（[OWASP ASVS 5.0、12.2.1](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/en/0x21-V12-Secure-Communication.md)、[Caddy：HTTPからHTTPSへのリダイレクト](https://caddyserver.com/docs/automatic-https)、[RFC 6797：HSTSと初回HTTPの問題](https://www.rfc-editor.org/rfc/rfc6797.html#section-14.6)）。
+
+Cの構成では、**プロキシが二つの役割を持ちます。** ブラウザとの接続ではTLSサーバー、アプリとの接続ではTLSクライアントです。そのため、プロキシもアプリ側の証明書を検証する立場になります（[NGINX：上流HTTPSサーバーへの接続と証明書検証](https://docs.nginx.com/nginx/admin-guide/security-controls/securing-http-traffic-upstream/)）。
+
 関連：[カプセル化・非カプセル化の実装とTLSの役割](./basic_security_at_home_20261005_question9_encapsulation_implementation.md)
