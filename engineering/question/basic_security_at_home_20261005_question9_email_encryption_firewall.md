@@ -34,4 +34,4 @@ S/MIMEなどのメッセージ暗号化を使う場合：
 
 たとえば会社の受信サーバーが通常のTLS接続でメールを受け取る場合、**インターネットとの境界にあるルーターはTLS内の添付ファイルを読めなくても、受信サーバーは復号後のメールを検査できます。** これが「ファイアウォールによる通信制御」と「メールのウイルス検査」を別の役割として考える理由です（[Microsoft：Exchange Onlineのメール保護](https://learn.microsoft.com/en-us/defender-office-365/eop-about)、[NIST SP 800-41 Rev.1、2.1.5節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)）。
 
-関連：[疑問10：メールのウイルス対策を行う場所](./basic_security_at_home_20261005_question10_email_malware_protection.md)
+関連：[追加質問：TLSとパケットのカプセル化](./basic_security_at_home_20261005_question9_tls_encapsulation.md)、[疑問10：メールのウイルス対策を行う場所](./basic_security_at_home_20261005_question10_email_malware_protection.md)
