@@ -210,4 +210,10 @@ curl --proto '=https' https://example.com/
 
 **サーバーがHTTPSだけを許可するとは、「条件を満たすクライアントとのHTTPS通信だけを受け入れる」ということです。** 接続できないクライアントを自動的にHTTPS対応にする、という意味ではありません。
 
+## 追加質問：クライアントのTLS実装と、TCP・TLSの接続順序
+
+クライアントのTLSは、OS提供のAPIや、ブラウザ・アプリが利用するTLSライブラリに実装されています。通常のTCP上のHTTPSでは、**3-wayハンドシェイクでTCP接続を確立し、その上でTLSハンドシェイクを行ってからHTTPを送受信します。** TCPの成功とTLSの成功は別で、TLSの方式が合わなければ、成立済みのTCP接続を終了します。
+
+今回の追加質問と詳しい回答は、[クライアントのTLS実装とTCP・TLSの接続順序](./basic_security_at_home_20261005_question9_tls_client_handshake.md)にまとめました。実装例の表、成功時・TLSのバージョン不一致時のシーケンス図、APIが報告する「接続成功」の違いを説明しています。
+
 関連：[カプセル化・非カプセル化の実装とTLSの役割](./basic_security_at_home_20261005_question9_encapsulation_implementation.md)

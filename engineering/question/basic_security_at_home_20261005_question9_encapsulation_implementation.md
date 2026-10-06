@@ -81,4 +81,6 @@ OSのTCP/IP機能 → NIC → ネットワーク
 
 ここで区別したいのは、**「OSがTLS機能を提供するか」と「TCP/IPのカーネル処理がTLSを自動で行うか」は別の話**だという点です。通常のTCPソケットを作るだけではTLS通信にはなりません。アプリや利用中の通信APIがTLSを選び、必要なハンドシェイクと証明書の検証を行います。Linuxの`kTLS`も、まずハンドシェイクを終えた後に、その結果を使って送受信のTLSレコード処理をカーネルへ移す仕組みです（[Apple：BSDソケットとTLSの違い](https://developer.apple.com/documentation/technotes/tn3151-choosing-the-right-networking-api)、[Linux Kernel：kTLSの接続手順](https://docs.kernel.org/networking/tls.html#creating-a-tls-connection)）。
 
+クライアント側の具体的なTLS実装と、TCP接続・TLSの確立の順序については、追加質問の[クライアントのTLS実装とTCP・TLSの接続順序](./basic_security_at_home_20261005_question9_tls_client_handshake.md)で、実装例の表とシーケンス図を使って説明しています。
+
 関連：[TLSとパケットのカプセル化](./basic_security_at_home_20261005_question9_tls_encapsulation.md)、[HTTPSサーバーを構築できるライブラリ](./basic_security_at_home_20261005_question9_https_server_libraries.md)
