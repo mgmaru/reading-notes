@@ -117,4 +117,4 @@ Linuxには、リンク層で届いたフレームをアプリが取得する`AF
 
 DHCPv4は下位層由来の値を上位のプロトコルで使う実例です。DHCP関連仕様は、ハードウェアアドレスだけに依存すると機器交換で識別子が変わる問題も説明しています。したがって「層をまたぐから必ず悪い」ではなく、**利用範囲が同じネットワーク内か、値が変わってもよいか、本人確認に使うつもりか**を確認して決めます（[RFC 2131、2節](https://www.rfc-editor.org/rfc/rfc2131.html#section-2)、[RFC 4361、4.1節・6.1節](https://www.rfc-editor.org/rfc/rfc4361.html)）。
 
-関連：[疑問9：メールの暗号化とファイアウォール](./basic_security_at_home_20261005_question9_email_encryption_firewall.md)
+関連：[追加質問：カプセル化・非カプセル化は誰が行う？](./basic_security_at_home_20261005_question9_encapsulation_implementation.md)、[疑問9：メールの暗号化とファイアウォール](./basic_security_at_home_20261005_question9_email_encryption_firewall.md)
