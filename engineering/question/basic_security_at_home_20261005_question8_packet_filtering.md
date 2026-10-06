@@ -75,4 +75,23 @@
 
 また、**IPを許可することは、その利用者や端末の本人確認ではありません。** IPは変わることがあり、複数端末で共有されることや、送信元を偽装したパケットが届くこともあります。外部からの接続先を限定公開するなら、許可した送信元IP以外の新規接続を拒否できます。特定の利用者本人まで確認したい場合は、送信元IPの制限に加え、VPN、相互TLS、アプリケーションのログイン認証などを使います（[NIST SP 800-41 Rev.1、2.1.1節・4.3節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)、[疑問7：IPスプーフィングとTLS](./basic_security_at_home_20261005_question7_stateful_inspection.md)）。
 
+## 追加質問：特定の外部IPをブロックするのはどんなとき？
+
+> 外の特定IPをブロックするのは特別な場合ですか？全国的に有名な悪質IPでないと、ブロックしないのでしょうか？
+
+**有名な悪質IPである必要はありません。自分たちのサービスで観測した迷惑な通信の送信元を、限定的に遮断することもあります。** ただし、まず決めるのは「どのサービスを誰に公開するか」です。公開しないPCへの新規受信は原則拒否し、限られた取引先だけが使うサービスなら送信元IPの許可リストを使えます。この場合、知らない相手のIPを一つずつ調べて拒否リストへ登録する必要はありません（[NIST SP 800-41 Rev.1、4章](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)）。
+
+| 場面 | 制御の例 | 特定IPを拒否する理由 |
+| --- | --- | --- |
+| 外部へ公開しない組織内PC | 外からの新規接続を原則拒否 | 個別の拒否リストは通常不要 |
+| 取引先だけが使う管理画面 | 取引先の送信元IPだけ許可し、他は拒否 | 「悪いIP」の調査ではなく、利用できる相手の限定 |
+| 誰でもアクセスできる公開Webサイト | TCP 443番を公開し、ログで確認した過剰なアクセス元だけを一時的に制限 | そのサイトでのログイン試行や大量アクセスを抑える |
+| 管理された脅威情報を利用する場合 | 活発な攻撃元として登録されたIPを拒否・監視 | 自組織でまだ観測していない送信元にも備える |
+
+例えば、公開サイトのログで**同じ送信元IPから短時間に大量のログイン試行**が続くことを確認したら、そのIPからのアクセスを一定時間遮断したり、リクエスト数を制限したりできます。判断材料は自組織のログで十分で、全国的な知名度は関係ありません。AWSのWAFガイドも、ログで見つけた高頻度の悪用元を制限する例と、IPごとのリクエスト数に応じた自動制御を説明しています。**基本的なパケットフィルタ自体はログインの成否を読めない**ため、このような検出にはアプリのログやWAFなどを使い、遮断ルールに反映します（[AWS：単一IPのブロックとログの利用](https://docs.aws.amazon.com/prescriptive-guidance/latest/bot-control/static-controls.html)、[AWS：WAFのレートベースルール](https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html)）。
+
+また、脅威情報の提供者が**現在、攻撃に使われていると判断したIP**をまとめ、管理された拒否リストとして提供することもあります。これは「誰でも知っている有名なIP」だけの一覧ではありません（[AWS：IPレピュテーションの管理ルール](https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-ip-rep.html)）。
+
+**IP単位の拒否には限界があります。** 一つの公開IPを複数人が共有していれば正当な利用者も巻き込み得ますし、攻撃者がIPを変えたり、多数のIPを使ったりすると一件ずつの拒否では追いつきません。IPを追加するときは、対象サービス・遮断期間・正当な通信への影響を確認し、必要に応じてレート制限やアカウント単位の対策を組み合わせます。NISTも、望ましくない相手のIPは時間とともに変わるため、IPの拒否対象を決める作業は誤りやすいと指摘しています（[NIST SP 800-41 Rev.1、4.1.1節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)、[AWS：IPブロックが効きにくい場合](https://docs.aws.amazon.com/prescriptive-guidance/latest/bot-control/static-controls.html)）。
+
 関連：[疑問7：ステートフルインスペクションと偽装した通信](./basic_security_at_home_20261005_question7_stateful_inspection.md)、[疑問5・6：ファイアウォールの設置場所](./basic_security_at_home_20261005_question5_6_firewall_placement.md)
