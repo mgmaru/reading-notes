@@ -47,4 +47,32 @@
 
 **覚え方：** IPの拒否リストは「分かっている危険な相手を止める」方法の一つです。パケットフィルタリングの基本は、**必要な通信を定義し、それ以外を通さない**ことです。
 
+## 追加質問：外から内への通信も、クライアントごとに許可・拒否できるか？
+
+> 内から外なら、組織内のPCごとにアクセス先を制御できると思います。外から内では、あるクライアントの通信は許可し、別のクライアントの通信は拒否するような細かい制御はできないのでしょうか？
+
+**できます。外から内への新規接続でも、送信元IPアドレスを条件に許可・拒否できます。** ファイアウォールが見る条件は、通信の向きに加え、送信元・宛先IPアドレス、プロトコル、ポート番号です。外向きだけに送信元IPを使えるわけではありません。受信ルールにも「送信元がこのIPで、宛先が公開サーバーのTCP 443番なら許可」のように指定できます（[NIST SP 800-41 Rev.1、2.1.1節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)、[AWS：受信・送信ルールの送信元／宛先の指定](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html)）。
+
+以下のIPアドレスは説明用です。まず、組織の境界にあるファイアウォールが各アドレスを見られる場合を考えます。
+
+| 新規接続の向き | 送信元IP | 宛先IP・ポート | ルールの例 |
+| --- | --- | --- | --- |
+| 内 → 外 | PC1 `192.168.10.11` | 許可した外部サーバーのIP・TCP 443 | PC1は許可 |
+| 内 → 外 | PC2 `192.168.10.12` | 同じ外部サーバーのIP・TCP 443 | PC2は拒否 |
+| 外 → 内 | 外部クライアントC1 `198.51.100.10` | 組織の公開サーバー `203.0.113.50:443` | C1は許可 |
+| 外 → 内 | 外部クライアントC2 `198.51.100.20` | 同じ公開サーバー `203.0.113.50:443` | C2は拒否 |
+
+```text
+外部C1（許可した送信元IP） ──→ [境界のファイアウォール] ──→ 公開サーバー:443
+外部C2（それ以外のIP）   ──→ [境界のファイアウォール] ×
+```
+
+ここでいう「外 → 内」は、**外部クライアントが新しく始める接続**です。PC1が外へ接続した後に戻ってくる返答も内向きに流れますが、ステートフルファイアウォールなら既存の接続への返答として区別して扱います（[NIST SP 800-41 Rev.1、2.1.2節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)）。
+
+**実際の制御の細かさは、判定する場所から何が見えるかで決まります。** 組織内の複数PCがNATで一つの公開IPに変換された後では、外側の機器は元のPCのIPだけでは区別できません。PC別の外向きルールは、変換前のIPが見える場所、または変換記録を使える機器で適用します。受信側も、公開IP・ポートから内部サーバーへ転送するNAT設定があるなら、その対応関係を考えてルールを設定します。外部クライアントが別のNATの背後にいて同じ公開IPを使う場合、送信元IPだけでは個々の端末を区別できません（[NIST SP 800-41 Rev.1、3.2節：NATと変換記録](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)、[Microsoft：DNATと送信元IPを条件にした受信ルール](https://learn.microsoft.com/en-us/azure/networking/design-guide/azure-firewall)）。
+
+質問の「PC1は `www.aaa.co.jp` を許可し、PC2は拒否する」には、もう一つ区別が必要です。**基本的なパケットフィルタが見る宛先はIPアドレスであり、Webサイト名そのものではありません。** サイトのIPが変わったり、複数のサイトが同じIPを使ったりすると、固定IPだけのルールでは目的のサイトだけを正確に選べません。ドメイン名で制御したい場合は、DNSの結果を反映するルールや、HTTP/HTTPSの接続先を扱うアプリケーション層のフィルタ・プロキシなどが必要です（[Microsoft：ネットワークルールとアプリケーションルールの違い](https://learn.microsoft.com/en-us/azure/networking/design-guide/azure-firewall)、[Microsoft：同じIPを使うドメインの区別](https://learn.microsoft.com/en-us/azure/firewall/domain-filtering-overview)）。
+
+また、**IPを許可することは、その利用者や端末の本人確認ではありません。** IPは変わることがあり、複数端末で共有されることや、送信元を偽装したパケットが届くこともあります。外部からの接続先を限定公開するなら、許可した送信元IP以外の新規接続を拒否できます。特定の利用者本人まで確認したい場合は、送信元IPの制限に加え、VPN、相互TLS、アプリケーションのログイン認証などを使います（[NIST SP 800-41 Rev.1、2.1.1節・4.3節](https://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-41r1.pdf)、[疑問7：IPスプーフィングとTLS](./basic_security_at_home_20261005_question7_stateful_inspection.md)）。
+
 関連：[疑問7：ステートフルインスペクションと偽装した通信](./basic_security_at_home_20261005_question7_stateful_inspection.md)、[疑問5・6：ファイアウォールの設置場所](./basic_security_at_home_20261005_question5_6_firewall_placement.md)
