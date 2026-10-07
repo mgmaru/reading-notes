@@ -211,30 +211,32 @@ flowchart TD
 
 > スイッチからARPをPC A、Bのルータおよび別のルータに転送していますが、この転送はスイッチにつながっている全てのルータに転送するんですか？
 
-**通常のARP Requestは、同じVLANの他の転送可能なポートへ転送されます。** 機器の種類で「ルーターかどうか」を選ぶ処理ではありません。ブロードキャスト宛てのフレームを、同じVLAN内へ広く送る処理です。受信したポートへは送り返しません（[Cisco公式：VLAN／Transparent Bridging Algorithm](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+**この節でいう「ポート」は、スイッチの物理的な接続口です。** LANケーブルをつなぐ接続口を指し、NAPTで扱うTCP／UDPのポート番号とは別の意味です。ここで説明しているARPの転送は、スイッチの処理です。NATの文書の図では、ルーターはBasic NATを使っています。
+
+**通常のARP Requestは、同じVLANの他の転送可能な接続口から送り出されます。** 機器の種類で「ルーターかどうか」を選ぶ処理ではありません。ブロードキャスト宛てのフレームを、同じVLAN内へ広く送る処理です。受信した接続口へは送り返しません（[Cisco公式：VLAN／Transparent Bridging Algorithm](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
 
 VLANは、スイッチ上でネットワークを論理的に分ける仕組みです。同じ物理スイッチに接続された機器でも、所属するVLANが異なれば、ARP Requestの配送範囲は分かれます。以下では、説明用にVLAN 10とVLAN 20を使います。特別なフィルタリングは設定せず、例の各ポートは通信できる状態とします。
 
 ```mermaid
 flowchart TD
-    U["ISP側のルーター<br/>問い合わせ元／VLAN 10"] -->|"ポート1から受信<br/>ARP Request：.10のMACは？<br/>宛先MAC FF:FF:FF:FF:FF:FF"| W["1台のスイッチ"]
+    U["ISP側のルーター<br/>問い合わせ元／VLAN 10"] -->|"接続口1から受信<br/>ARP Request：.10のMACは？<br/>宛先MAC FF:FF:FF:FF:FF:FF"| W["1台のスイッチ<br/>接続口は物理ポート"]
     subgraph V10["問い合わせ元と同じVLAN 10"]
-        R["PC A・BのNATルーターのWAN側<br/>.10を担当するのでProxy ARPで応答<br/>MAC：M-WAN"]
+        R["PC A・BのBasic NATルーターのWAN側<br/>.10を担当するのでProxy ARPで応答<br/>MAC：M-WAN"]
         O["別のルーターの接続インターフェース<br/>.10を担当しないので応答しない"]
         H["同じWAN側VLANに直接つながるPC<br/>.10を担当しないので応答しない"]
     end
     subgraph V20["別のVLAN 20"]
         X["もう1台のルーター<br/>このARP Requestは届かない"]
     end
-    W -->|"ポート2：転送"| R
-    W -->|"ポート3：転送"| O
-    W -->|"ポート4：転送"| H
-    W -.->|"ポート5：接続あり／ARPを転送しない"| X
+    W -->|"接続口2：転送"| R
+    W -->|"接続口3：転送"| O
+    W -->|"接続口4：転送"| H
+    W -.->|"接続口5：接続あり／ARPを転送しない"| X
 ```
 
-実線はARP Requestの受信・転送を示します。点線は、同じスイッチに接続していても、このARP Requestの転送先にはならないことを示します。図の `.10` は `203.0.113.10` の略です。ポート番号は説明用で、TCP／UDPのポート番号ではなく、スイッチの接続口を指します。
+実線はARP Requestの受信・転送を示します。点線は、同じスイッチに接続していても、このARP Requestの転送先にはならないことを示します。図の `.10` は `203.0.113.10` の略です。接続口1～5は、スイッチの物理的な差込口につけた説明用の番号です。TCP／UDPのポート番号 `443`・`53124` とは種類が異なります。
 
-| スイッチのポート | 接続先 | VLAN | 今回のARP Requestを転送するか |
+| スイッチの接続口（物理ポート） | 接続先 | VLAN | 今回のARP Requestを転送するか |
 | --- | --- | --- | --- |
 | 1 | 問い合わせ元のISP側ルーター | 10 | **しない。**このポートから受信したため、送り返さない |
 | 2 | PC A・BのNATルーターのWAN側 | 10 | **する。**この例では、受信したNATルーターがProxy ARPで応答する |

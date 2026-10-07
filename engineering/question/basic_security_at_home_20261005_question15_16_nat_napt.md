@@ -443,6 +443,8 @@ ARPは、同じネットワーク内でIPから次に渡す相手のMACを調べ
 
 PC Aへの返答を、問い合わせから転送まで図にすると、次のようになります。ARPの問い合わせが複数機器へ届くことを示すため、ここでは**同じEthernetリンクに、スイッチと別のルーターもある構成例**を描きます。その別のルーターは `.10` を担当しないとします。スイッチや複数ルーターの存在は必須条件ではなく、Ethernetで直結する構成もあります。構成図は追加質問7に載せています。
 
+**この図のNATルーターはBasic NATを使います。** スイッチの「ポート」はLANケーブルを接続する物理的な接続口です。図中の「TCP 53124」は通信を区別するポート番号で、この接続口とは別のものです。
+
 サーバーからISP側の隣接ルーターまでの矢印は、インターネット上の複数の区間をまとめています。ルーター内部やLAN側の処理も、理解のために簡略化しています。
 
 ```mermaid
@@ -450,7 +452,7 @@ sequenceDiagram
     participant S as 外部サーバー
     participant U as ISP側の隣接ルーター
     participant W as スイッチ
-    participant R as PC A・BのNATルーター
+    participant R as PC A・Bのルーター（Basic NAT）
     participant O as 別のルーター
     participant A as PC A
     S->>U: 返答（インターネット経由）：宛先IP .10／TCP 53124
@@ -458,7 +460,7 @@ sequenceDiagram
     opt .10の使えるARP記録がない場合
         Note over U,O: ARPは同じEthernetリンク内の通信
         U->>W: ARP Requestを1回送信：.10のMACは？／宛先MAC FF:FF:FF:FF:FF:FF
-        Note over W: 受信ポートを除く、同じVLANの転送可能なポートへ送る
+        Note over W: 受信した接続口を除く、同じVLANの他の転送可能な接続口へ送る<br/>接続口はTCP／UDPのポート番号とは別
         W->>R: 同じARP Requestを転送
         W->>O: 同じARP Requestを転送
         Note over O: .10を担当しないので応答しない
@@ -476,7 +478,7 @@ sequenceDiagram
 
 この図では、スイッチが `M-WAN` を受け取るポートを学習済みとして、返答のフレームをそのポートへ転送しています。ARPのブロードキャストと、MACが分かった後の通常の1対1の送信は、送り方が異なります（[Cisco公式：スイッチのMAC学習・転送・ブロードキャスト](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
 
-PC Bへの返答も、`.11` を使って同じように受け取ります。両方が同じポート `53124` を使っていても、宛先IPが違うため、対応表で区別できます。
+PC Bへの返答も、`.11` を使って同じように受け取ります。両方が同じTCPポート番号 `53124` を使っていても、宛先IPが違うため、対応表で区別できます。
 
 | 返答 | WAN側で受け取る宛先IP・TCPポート | WAN側の宛先MAC | Basic NAT後の宛先IP・TCPポート |
 | --- | --- | --- | --- |
@@ -664,11 +666,20 @@ ISP側から来る、PC A向けの `.10` 宛ての返答と、PC B向けの `.11
 
 > スイッチからARPをPC A、Bのルータおよび別のルータに転送していますが、この転送はスイッチにつながっている全てのルータに転送するんですか？
 
-**図のように、それらのルーターが同じVLANの転送可能なポートにつながっていれば、ARP Requestはそれぞれへ転送されます。** 通常のスイッチの規則は、「ARPを受信したポートを除き、同じVLANの他の転送可能なポートへ送る」です。ARP Requestの宛先MACが、ブロードキャスト用の `FF:FF:FF:FF:FF:FF` だからです（[Cisco公式：VLANとブロードキャストの転送規則](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+**ここで説明しているのは、スイッチの動作です。「ポート」は、LANケーブルを接続する物理的な接続口を指します。** NAPTで通信を識別するために使うTCP／UDPのポート番号と区別してください。
+
+| 「ポート」の種類 | 意味 | 例 | 関係する処理 |
+| --- | --- | --- | --- |
+| スイッチのポート（接続口） | ケーブルを接続し、フレームを送受信する物理的な接続口 | 接続口1、接続口2 | スイッチがARPなどのEthernetフレームを送り出す |
+| TCP／UDPのポート番号 | IPアドレスと組み合わせて、通信やアプリケーションを区別する番号 | TCP `443`、TCP `53124` | PCやサーバーが通信を識別する。NAPTの対応付けにも使う |
+
+**この図のルーターはBasic NATです。** 「スイッチが接続口から送る」ことと、「Basic NATがIPアドレスを変換する」ことは、別の処理です。返答のIPパケットがNATルーターへ届いた後、Basic NATが宛先IPを `.10 → 192.168.1.10` に変換します。Ethernetで同じ構成を使うなら、Basic NATでもNAPTでも、スイッチが接続口からフレームを転送する動作は同じです（[RFC 3022、4.1節：Basic NATのIP変換](https://www.rfc-editor.org/rfc/rfc3022.html#section-4.1)、[Cisco公式：スイッチによるEthernetフレームの転送](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
+**図のように、それらのルーターが同じVLANの転送可能な接続口につながっていれば、ARP Requestはそれぞれへ転送されます。** 通常のスイッチの規則は、「ARPを受信した接続口を除き、同じVLANの他の転送可能な接続口から送る」です。ARP Requestの宛先MACが、ブロードキャスト用の `FF:FF:FF:FF:FF:FF` だからです（[Cisco公式：VLANとブロードキャストの転送規則](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
 
 - 同じVLANにつながる機器なら、ルーターに加えて、PCやサーバーにも届きます。スイッチが「ルーターだけ」を選んで送るわけではありません。
 - 同じスイッチに物理的につながっていても、別のVLANの機器へは、このARP Requestを転送しません。
-- 問い合わせ元のISP側ルーターにつながる受信ポートへ、同じフレームを送り返すこともしません。
+- 問い合わせ元のISP側ルーターにつながる接続口はARPの受信元なので、そこへ同じフレームを送り返しません。
 
 **問い合わせを受信することと、応答することは別です。** この例では、複数機器が問い合わせを受け取りますが、`.10` を担当するNATルーターがProxy ARPで応答します。別のルーターは `.10` を担当しないため応答しません。ISP側はその応答で `M-WAN` を知り、サーバーの返答をそのMAC宛てに送れます（[RFC 826：ブロードキャストするRequestと対象機器のReply](https://datatracker.ietf.org/doc/html/rfc826)、[Cisco公式：NAT用IPへのProxy ARP](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
 
