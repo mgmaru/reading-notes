@@ -355,19 +355,21 @@ Basic NATは、IPの対応関係を使って変換し、TCP／UDPのポート番
 
 例えばLinuxの `ip address` のマニュアルも、一つのネットワークデバイスに複数のIPv4／IPv6アドレスを設定できることを説明しています。**IPを追加するたびにNICを追加する必要はありません**（[iproute2のマニュアル：ip-address(8)のDESCRIPTION](https://man7.org/linux/man-pages/man8/ip-address.8.html#DESCRIPTION)）。
 
-次の図は、WAN側NICが1枚でも、2個の変換用IPを利用できる構成例です。WANインターフェース自身のIPを `203.0.113.2`、変換用IPを `.10`・`.11` として、役割を分けて示しています。
+次の図は、WAN側NICが1枚でも、2個の変換用IPを利用できる構成例です。WANインターフェース自身のIPを `203.0.113.2`、変換用IPを `.10`・`.11` として、役割を分けて示しています。**「インターフェースIPが `.2`」という表示は、外側で使うIPが `.2` 一つだけという意味ではありません。**
+
+この図では、WAN側の接続にEthernetを使い、ISP側の隣接IP `.1`、WANインターフェースのIP `.2`、変換用IP `.10`・`.11` が同じサブネット `203.0.113.0/24` にあるとします。**ルーターがProxy ARPにより `.10`・`.11` のARP問い合わせにも応答し、それらのIP宛ての返答を受け取る設定**を前提にしています（[Cisco公式：同じネットワークにあるNAT用IPとProxy ARP](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
 
 ```mermaid
 flowchart LR
-    A["PC A<br/>192.168.1.10"] --> LAN
-    B["PC B<br/>192.168.1.11"] --> LAN
+    A["PC A<br/>192.168.1.10"] <--> LAN
+    B["PC B<br/>192.168.1.11"] <--> LAN
     subgraph R["同じルーター"]
-        LAN["LAN側NIC：1枚<br/>192.168.1.1"] --> NAT
-        NAT["Basic NAT<br/>AのIP ↔ 203.0.113.10<br/>BのIP ↔ 203.0.113.11"] --> WAN
-        WAN["WAN側NIC：1枚<br/>インターフェースIP：203.0.113.2"]
+        LAN["LAN側NIC：1枚<br/>192.168.1.1"] <--> NAT
+        NAT["Basic NAT<br/>AのIP ↔ 203.0.113.10<br/>BのIP ↔ 203.0.113.11"] <--> WAN
+        WAN["WAN側NIC：1枚<br/>インターフェースIP：203.0.113.2<br/>NAT用 .10・.11 宛ても受信<br/>Proxy ARPで応答"]
     end
-    WAN -->|"2台分を同じNICで送受信"| ISP["ISP側のルーター"]
-    ISP --> SERVER["外部サーバー<br/>198.51.100.20"]
+    WAN <-->|".10・.11 の通信を同じNICで送受信"| ISP["ISP側のルーター<br/>隣接IP：203.0.113.1"]
+    ISP <--> SERVER["外部サーバー<br/>198.51.100.20"]
 ```
 
 外側へ出るパケットの送信元IPは、Aなら `.10`、Bなら `.11` です。**どちらも同じWAN側NICを通ります。** 「パケットの送信元IP」と「通過するインターフェース自身のIP」は、常に同じとは限りません。CiscoのNATプールの設定例でも、外側インターフェースのIPと、変換用のプールを別々に設定しています（[Cisco公式：NAT FAQの「What are NAT IP pools?」](https://www.cisco.com/c/en/us/support/docs/ip/network-address-translation-nat/26704-nat-faq-00.html)）。
@@ -404,6 +406,73 @@ Cisco ASAの公式資料は、前者にはProxy ARP、後者には上流からNA
 この例では、**2台のPCに対して3個の外側ポート**を使います。また、NAPTは外側IPを1個だけ使う構成に限定されず、複数の外側IPを使うこともできます（[Cisco公式：NAT FAQの「How does PAT work?」](https://www.cisco.com/c/en/us/support/docs/ip/network-address-translation-nat/26704-nat-faq-00.html)）。
 
 「ポートは増やせる」という点にも上限があります。TCP／UDPのポート番号は16ビットで、数値の範囲は `0～65535` です。そのすべてが自由に利用できるとは限らず、無限に番号を増やせるわけでもありません（[RFC 6335、3章・6章：ポート番号の役割と範囲](https://www.rfc-editor.org/rfc/rfc6335.html#section-6)）。ただし、IP・プロトコル・接続先なども通信の識別に関わるため、この範囲をそのまま「接続できるPCの台数」として数えることもできません。通信相手によるポートの再利用については、本文4章の補足も参照してください。
+
+## 追加質問4：WAN側NICが1枚でも、2台分のBasic NATの返答を受け取れるか
+
+> 「2. 1枚のNICで、複数のIPアドレスを扱える」の部分について、追加質問です。図でWANのNICについて、「WAN側NIC：1枚
+> インターフェースIP：203.0.113.2」と書いてありますが、PCがAとB２台分のIPがWANにも必要な気がするのですが、どうですか？
+> サーバーからのレスポンス時に困るような気がします。
+
+**はい。このBasic NATの例では、PC A・B用の外側IPが2個必要です。図の `203.0.113.10` と `203.0.113.11` が、それに当たります。** `203.0.113.2` は、それらとは別の、ルーター自身のWANインターフェースに設定したIPです。元の図では、`.10`・`.11` 宛ての返答を受け取る設定条件が省略されていたため、上の図に補足しました。
+
+### 1. ルーター側で使う外側IPは3個ある
+
+| 外側のIP | この例での役割 | PCへの返答との関係 |
+| --- | --- | --- |
+| `203.0.113.2` | ルーター自身のWANインターフェースのIP。上流とのIP接続やルーター自身の通信に使う | この例のPC A・Bの通信は、このIPへ変換していない |
+| `203.0.113.10` | Basic NATでPC Aの `192.168.1.10` と対応付ける外側IP | Aへの返答の宛先になる |
+| `203.0.113.11` | Basic NATでPC Bの `192.168.1.11` と対応付ける外側IP | Bへの返答の宛先になる |
+
+**このルーターがWAN側で利用するのは、PC用の外側IP2個を含む、この3個のIPです。WAN側NICは1枚で足ります。** インターフェース自身のIPと変換用IPの設定は、分けて管理できます。Basic NATの外側IPは、同時に対応付ける内側IPごとに必要です（[RFC 3022、2.1節：Basic NATの外側IPと同時利用数](https://www.rfc-editor.org/rfc/rfc3022.html#section-2.1)）。
+
+サーバーが受け取った送信元が `.10` なら、返答の宛先も `.10` です。`.11` なら、返答の宛先は `.11` です。**この2台の返答が、両方とも `.2` 宛てになるわけではありません。**
+
+### 2. 返答を同じWAN側NICへ届け、宛先IPで元のPCを識別する
+
+上の図で補足した、同じサブネットとProxy ARPを使う構成で説明します。WAN側NICのMACアドレスを、説明用の記号で `M-WAN` と書きます。
+
+PC Aへの返答は、次の順番で届きます。
+
+1. **外部サーバーが返答する。** 宛先IPは `203.0.113.10`。インターネットの経路を通って、WAN側に隣接するISP側のルーターまで届きます。
+2. **ISP側のルーターが、次に渡すMACを調べる。** この例では `.10` が同じサブネットなので、ARPで「`203.0.113.10` のMACは？」と問い合わせます。すでにARPの記録があれば、それを使います。
+3. **NATルーターがProxy ARPで応答する。** `.10` をインターフェース自身の追加IPとして設定していなくても、NATの設定に基づき「`.10` 宛ては `M-WAN` へ」と応答する構成です。
+4. **同じWAN側NICが返答を受け取る。** Ethernetフレームの宛先MACは `M-WAN`、その中のIPパケットの宛先は `203.0.113.10` です。ここまで、宛先IPを `.2` へ変える必要はありません。
+5. **ルーターがBasic NATの対応表で戻す。** 宛先IPを `.10` から `192.168.1.10` に変換し、LAN側からPC Aへ転送します。TCPポート番号は、この例では `53124` のままです。
+
+ARPは、同じネットワーク内でIPから次に渡す相手のMACを調べる仕組みです（[RFC 826：Packet Generationのアドレス解決](https://www.rfc-editor.org/rfc/rfc826.html)）。NAT用IPへのProxy ARPと、その返答を元の内側IPへ戻す動作は、Cisco ASAの公式資料にも示されています（[Cisco公式：NAT in routed mode／Mapped Addresses and Routing](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
+
+PC Aへの返答を、問い合わせから転送まで図にすると、次のようになります。ルーター内部の処理は、理解のために簡略化しています。
+
+```mermaid
+sequenceDiagram
+    participant S as 外部サーバー
+    participant U as ISP側の隣接ルーター
+    participant R as NATルーター（WAN側NICは1枚）
+    participant A as PC A
+    S->>U: 返答：IP宛先 203.0.113.10:53124
+    opt ARPの記録がない場合
+        U->>R: ARP：203.0.113.10 のMACは？
+        R-->>U: Proxy ARP：M-WAN へ送ってください
+    end
+    U->>R: MAC宛先 M-WAN／IP宛先 203.0.113.10:53124
+    R->>R: Basic NAT：宛先IPを 192.168.1.10 へ戻す
+    R->>A: LAN側へ転送：IP宛先 192.168.1.10:53124
+```
+
+PC Bへの返答も、`.11` を使って同じように受け取ります。両方が同じポート `53124` を使っていても、宛先IPが違うため、対応表で区別できます。
+
+| 返答 | WAN側で受け取る宛先IP・TCPポート | WAN側の宛先MAC | Basic NAT後の宛先IP・TCPポート |
+| --- | --- | --- | --- |
+| PC Aへ | `203.0.113.10:53124` | `M-WAN` | `192.168.1.10:53124` |
+| PC Bへ | `203.0.113.11:53124` | `M-WAN` | `192.168.1.11:53124` |
+
+**同じMAC・同じNICへ届いても、中に入っているIPの宛先は別々です。** MACでルーターのNICへ届け、IPとNATの対応関係で元のPCを特定します。Basic NATが返答の宛先IPを書き換えることは、RFC 3022の4.1節で説明されています（[RFC 3022、4.1節：返答の宛先IPの変換](https://www.rfc-editor.org/rfc/rfc3022.html#section-4.1)）。
+
+### 3. 返答を受け取る設定がなければ、その懸念どおり届かない
+
+**`.2` を設定してNATの対応表を作るだけでは、`.10`・`.11` 宛ての返答が届く保証はありません。** 上の構成では、利用可能な外側IPの割り当てと、`.10`・`.11` に対するProxy ARPの設定・動作が必要です。別のサブネットから変換用IPを使う構成なら、上流からNATルーターへ向けた経路を用意します（[Cisco公式：Mapped Addresses and Routingの同一・別サブネットの説明](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
+
+質問の「2台分のIPがWANにも必要」という理解は、このBasic NATの例に当てはまります。その2個の外側IPを使い、返答を受け取れる設定を整えることで、**1枚のWAN側NICから2台へ戻せます。**
 
 次に読む：[疑問16：IPルーティングと転送経路](./basic_security_at_home_20261005_question16_ip_routing.md)、[疑問16：ARPとMACアドレスによるLAN内の配送](./basic_security_at_home_20261005_question16_arp_mac_address.md)。
 
