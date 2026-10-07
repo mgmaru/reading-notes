@@ -263,9 +263,9 @@
 - ここでいう内部パケットとは、社内という認識で良い？
 13. hostsファイルを書き換えるときに、管理者権限が出るが、これはウィルスによって管理者権限を奪うことができるのか？ -> 済（[hosts改ざんと権限](./question/basic_security_at_home_20261005_question13_hosts_tampering.md)、[Windowsの管理者権限とUAC](./question/basic_security_at_home_20261005_question13_14_windows_privileges_uac.md)）
 14. Windowsの管理者権限とは、Linuxでいうroot権限？？ -> 済（[Windowsの管理者権限とUAC](./question/basic_security_at_home_20261005_question13_14_windows_privileges_uac.md)、[Linuxのrootとsudo](./question/basic_security_at_home_20261005_question14_linux_root_sudo.md)）
-15. NAT（アドレス変換って何？）
+15. NAT（アドレス変換って何？） -> 済（[NAT・NAPTと返答先の識別](./question/basic_security_at_home_20261005_question15_16_nat_napt.md)）
 - グローバルIPをローカルIPに変換するもの？
-16. グローバルIPからローカルIPへデータを転送するのはルータの役目だと思うが、どのローカルIPに割り振るのか？識別方法は？MACアドレス？
+16. グローバルIPからローカルIPへデータを転送するのはルータの役目だと思うが、どのローカルIPに割り振るのか？識別方法は？MACアドレス？ -> 済（[NAT・NAPT](./question/basic_security_at_home_20261005_question15_16_nat_napt.md)、[IPルーティング](./question/basic_security_at_home_20261005_question16_ip_routing.md)、[ARPとMACアドレス](./question/basic_security_at_home_20261005_question16_arp_mac_address.md)）
 ### わかったこと
 1. IPスプーフィングだけではなく、**ARPスプーフィング**という攻撃もある。
 2. ファイアウォールのパケットフィルタリング機能は、IPアドレスなどを知らなくても、通信の向きで通信を制御できる。
