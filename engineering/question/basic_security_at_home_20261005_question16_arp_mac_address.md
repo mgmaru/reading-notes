@@ -141,6 +141,72 @@ PCで実行した場合に見えるのは、**そのPC自身が持つ表**です
 
 IPv6ではARPを使わず、**Neighbor Discovery（近隣探索、ND）**が同じリンク上のリンク層アドレスを調べる役割などを担います（[RFC 4861、概要・7.2節：IPv6のアドレス解決](https://www.rfc-editor.org/rfc/rfc4861.html#section-7.2)）。
 
+## 追加質問：MACアドレスを知らないと、どこで送信が止まるのか
+
+> なぜ、MACアドレスまで必要なのかがわからないです。
+> MACアドレスを知らなかった場合を考えると良いかもしれません。
+
+この質問の背景となったWAN側の構成とARPのシーケンスは、[NATの文書の追加質問7](./basic_security_at_home_20261005_question15_16_nat_napt.md)に載せています。ここでは、Ethernetの配送と、MACが分からない場合の動作に絞って説明します。
+
+### 1. 宛先IPが分かっていても、Ethernetの宛先欄は別に必要
+
+**Ethernetで通常の1対1の通信をするには、受け取り先のMACを指定します。** IPパケットはEthernetフレームの中に入るので、中の宛先IPだけでは、外側の宛先MACの代わりになりません（[RFC 894：Frame Format／Address Mappings](https://www.rfc-editor.org/rfc/rfc894.html)）。
+
+NATの文書と同じく、ISP側から、宛先IP `203.0.113.10` のサーバーの返答をNATルーターへ渡す場面を考えます。WAN側NICのMACは、説明用の記号 `M-WAN` とします。
+
+```text
+MACが分からない状態                    MACが分かった状態
+
+Ethernetの宛先MAC：???                 Ethernetの宛先MAC：M-WAN
+└─ IPパケット                         └─ IPパケット
+   宛先IP：203.0.113.10                   宛先IP：203.0.113.10
+   内容  ：サーバーの返答                 内容  ：サーバーの返答
+
+通常の1対1のフレームを作れない          宛先MACを指定して送れる
+```
+
+`???` は「送信に使うMACをまだ得ていない」という説明用の記号です。宛先欄を空欄にしたフレームが実際に送られる、という意味ではありません。ARPが担当するのは、IPの宛先を変更することではなく、このMACを得る処理です。
+
+### 2. 通常のスイッチはMACを使って転送する
+
+複数機器がスイッチにつながる構成では、**通常のレイヤー2のスイッチは、宛先MACを見て、フレームを転送するポートを選びます。** IPパケットの中の宛先IPを読んで経路を選ぶ処理とは別です。スイッチの詳細な構成例は、NATの文書に示しています。
+
+| 情報 | 持つ機器 | この場面での例 | 用途 |
+| --- | --- | --- | --- |
+| ARP表 | ISP側のルーター | `203.0.113.10 → M-WAN` | 送信するフレームの宛先MACを得る |
+| MACアドレス表 | スイッチ | `M-WAN → NATルーターにつながるポート` | 届いたフレームの転送先ポートを選ぶ |
+
+ARP表とMACアドレス表は、対応付けるものが違います（[RFC 826：IPとMACの対応](https://www.rfc-editor.org/rfc/rfc826.html)、[Cisco公式：スイッチのMAC学習と転送](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
+なお、**送信元が宛先MACを知らない場合**と、**スイッチがそのMACの接続ポートをまだ学習していない場合**も別です。後者では、宛先MACが記入されたフレームを、同じVLANの他のポートへ広く転送することがあります。これは「送信元が宛先MACを書かなくてもよい」という仕組みではありません（[Cisco公式：Unknown UnicastのFlooding](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
+スイッチを使わずEthernetで2台を直結しても、フレームの形式は同じなので、宛先MACを指定します。**複数のルーターがあるから初めてMACが必要になる、ということではありません。**
+
+### 3. MACが不明でもARPで分かれば送れる。最後まで分からなければ届かない
+
+次の図は、ISP側のルーターが返答を受け取ってからの処理です。使えるARP記録などのIPとMACの対応があるかを確認し、なければ短時間保留してARPで調べます（[RFC 826：Packet Generation](https://www.rfc-editor.org/rfc/rfc826.html)、[RFC 1812、3.3.2節：ARP中の保留と解決失敗](https://www.rfc-editor.org/rfc/rfc1812.html#section-3.3.2)）。
+
+```mermaid
+flowchart TD
+    P["ISP側のルーターがサーバーの返答を受信<br/>宛先IP：203.0.113.10"] --> C{"使えるIPとMACの対応がある？"}
+    C -->|"ある"| F["宛先MACをM-WANにして<br/>返答をEthernetフレームに包んで送信"]
+    C -->|"ない"| Q["返答を短時間保留し、ARP Requestを送る<br/>宛先MAC：FF:FF:FF:FF:FF:FF"]
+    Q --> D{"ARPでMACを得られた？"}
+    D -->|"得られた"| M["203.0.113.10 → M-WANを記録"]
+    M --> F
+    D -->|"問い合わせても解決できない"| X["送信を進められず、返答を最終的に破棄<br/>NATルーターには届かない"]
+    F --> R["NATルーターが返答を受信<br/>Basic NAT：.10 → 192.168.1.10"]
+    R --> A["LAN側で配送し、PC Aへ届く"]
+```
+
+**MACが最後まで分からなければ、NATルーターは返答を受け取れません。** そのため、NATルーターに正しい「`.10 → PC A`」の対応があっても、それを使う段階まで進めません。ARP表に記録がないだけで直ちに失敗するのではなく、ARPによる解決を試みたうえで、解決できなければ送信に失敗します。
+
+### 4. 相手のMACが不明なのに、ARP自体はなぜ送れるのか
+
+最初のARP Requestには、**同じリンク内の機器へ広く届ける特別な宛先MAC `FF:FF:FF:FF:FF:FF`**を使います。この既知のブロードキャスト用アドレスを指定できるため、個別の相手のMACが不明でも問い合わせを送れます。
+
+対象のIPを担当する機器が応答すると、相手のMACが分かり、その後の返答データにはそのMACを指定できます。**ARPの問い合わせにも宛先MACはありますが、その宛先は特定のNATルーターではなく、リンク内へのブロードキャストです**（[RFC 826：ブロードキャストするRequestと、問い合わせ元へ返すReply](https://www.rfc-editor.org/rfc/rfc826.html)、[Cisco公式：ブロードキャストMACの転送](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
 関連：[NAT・NAPTと返答先の識別](./basic_security_at_home_20261005_question15_16_nat_napt.md)、[IPルーティングと転送経路](./basic_security_at_home_20261005_question16_ip_routing.md)。
 
-調査日：2026-10-07。根拠はIETF／RFC EditorのRFC、Microsoft公式資料、OS・iproute2のマニュアルです。図・表・表示例は説明用です。
+調査日：2026-10-07。根拠はIETF／RFC EditorのRFC、Cisco・Microsoft公式資料、OS・iproute2のマニュアルです。図・表・表示例は説明用です。
