@@ -207,6 +207,45 @@ flowchart TD
 
 対象のIPを担当する機器が応答すると、相手のMACが分かり、その後の返答データにはそのMACを指定できます。**ARPの問い合わせにも宛先MACはありますが、その宛先は特定のNATルーターではなく、リンク内へのブロードキャストです**（[RFC 826：ブロードキャストするRequestと、問い合わせ元へ返すReply](https://www.rfc-editor.org/rfc/rfc826.html)、[Cisco公式：ブロードキャストMACの転送](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
 
+## 追加質問：スイッチはARP Requestをどこまで転送するのか
+
+> スイッチからARPをPC A、Bのルータおよび別のルータに転送していますが、この転送はスイッチにつながっている全てのルータに転送するんですか？
+
+**通常のARP Requestは、同じVLANの他の転送可能なポートへ転送されます。** 機器の種類で「ルーターかどうか」を選ぶ処理ではありません。ブロードキャスト宛てのフレームを、同じVLAN内へ広く送る処理です。受信したポートへは送り返しません（[Cisco公式：VLAN／Transparent Bridging Algorithm](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
+VLANは、スイッチ上でネットワークを論理的に分ける仕組みです。同じ物理スイッチに接続された機器でも、所属するVLANが異なれば、ARP Requestの配送範囲は分かれます。以下では、説明用にVLAN 10とVLAN 20を使います。特別なフィルタリングは設定せず、例の各ポートは通信できる状態とします。
+
+```mermaid
+flowchart TD
+    U["ISP側のルーター<br/>問い合わせ元／VLAN 10"] -->|"ポート1から受信<br/>ARP Request：.10のMACは？<br/>宛先MAC FF:FF:FF:FF:FF:FF"| W["1台のスイッチ"]
+    subgraph V10["問い合わせ元と同じVLAN 10"]
+        R["PC A・BのNATルーターのWAN側<br/>.10を担当するのでProxy ARPで応答<br/>MAC：M-WAN"]
+        O["別のルーターの接続インターフェース<br/>.10を担当しないので応答しない"]
+        H["同じWAN側VLANに直接つながるPC<br/>.10を担当しないので応答しない"]
+    end
+    subgraph V20["別のVLAN 20"]
+        X["もう1台のルーター<br/>このARP Requestは届かない"]
+    end
+    W -->|"ポート2：転送"| R
+    W -->|"ポート3：転送"| O
+    W -->|"ポート4：転送"| H
+    W -.->|"ポート5：接続あり／ARPを転送しない"| X
+```
+
+実線はARP Requestの受信・転送を示します。点線は、同じスイッチに接続していても、このARP Requestの転送先にはならないことを示します。図の `.10` は `203.0.113.10` の略です。ポート番号は説明用で、TCP／UDPのポート番号ではなく、スイッチの接続口を指します。
+
+| スイッチのポート | 接続先 | VLAN | 今回のARP Requestを転送するか |
+| --- | --- | --- | --- |
+| 1 | 問い合わせ元のISP側ルーター | 10 | **しない。**このポートから受信したため、送り返さない |
+| 2 | PC A・BのNATルーターのWAN側 | 10 | **する。**この例では、受信したNATルーターがProxy ARPで応答する |
+| 3 | 別のルーター | 10 | **する。**ただし、この例では `.10` を担当せず、応答しない |
+| 4 | WAN側VLANに直接接続したPC | 10 | **する。**ルーター以外も転送先になる |
+| 5 | もう1台のルーター | 20 | **しない。**問い合わせ元とVLANが異なる |
+
+**「受信する範囲」と「応答する機器」を区別すると、図を読みやすくなります。** スイッチは、ARPの対象IP `.10` を担当するルーターだけを探して問い合わせを届けるのではなく、ブロードキャストを同じVLAN内へ転送します。その問い合わせを受信した機器のうち、対象IPを担当する機器が応答します。今回のNAT用IPは、NATルーターがProxy ARPで代理応答する例です（[RFC 826：RequestとReply](https://datatracker.ietf.org/doc/html/rfc826)、[Cisco公式：NAT用IPへのProxy ARP](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
+
+WAN側のARP Requestは、今回のNATルーターを越えて、その内側のPC A・Bへ配送されるものではありません。上の図の「WAN側VLANに直接つながるPC」は、LAN側のPC A・Bとは別の機器です。ARPの問い合わせは同じリンク内で行い、次のリンクへIPパケットを渡すときは、そのリンクで使う配送先のMACを調べます（[RFC 826：ルーティング後のリンク内のアドレス解決](https://datatracker.ietf.org/doc/html/rfc826)、[RFC 1812、5.2.1.2節の手順10～11](https://www.rfc-editor.org/rfc/rfc1812.html#section-5.2.1.2)）。
+
 関連：[NAT・NAPTと返答先の識別](./basic_security_at_home_20261005_question15_16_nat_napt.md)、[IPルーティングと転送経路](./basic_security_at_home_20261005_question16_ip_routing.md)。
 
 調査日：2026-10-07。根拠はIETF／RFC EditorのRFC、Cisco・Microsoft公式資料、OS・iproute2のマニュアルです。図・表・表示例は説明用です。

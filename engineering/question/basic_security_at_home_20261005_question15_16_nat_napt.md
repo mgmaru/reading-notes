@@ -429,7 +429,7 @@ Cisco ASAの公式資料は、前者にはProxy ARP、後者には上流からNA
 
 ### 2. 返答を同じWAN側NICへ届け、宛先IPで元のPCを識別する
 
-上の図で補足した、同じサブネットとProxy ARPを使う構成で説明します。WAN側NICのMACアドレスを、説明用の記号で `M-WAN` と書きます。
+上の図で補足した、同じサブネットとProxy ARPを使う構成で説明します。**PC A・Bが共有する1台のNATルーターのWAN側NICのMACアドレス**を、説明用の記号で `M-WAN` と書きます。
 
 PC Aへの返答は、次の順番で届きます。
 
@@ -458,6 +458,7 @@ sequenceDiagram
     opt .10の使えるARP記録がない場合
         Note over U,O: ARPは同じEthernetリンク内の通信
         U->>W: ARP Requestを1回送信：.10のMACは？／宛先MAC FF:FF:FF:FF:FF:FF
+        Note over W: 受信ポートを除く、同じVLANの転送可能なポートへ送る
         W->>R: 同じARP Requestを転送
         W->>O: 同じARP Requestを転送
         Note over O: .10を担当しないので応答しない
@@ -635,6 +636,43 @@ ARPのブロードキャストは[RFC 826](https://www.rfc-editor.org/rfc/rfc826
 保留してARPで解決を試み、失敗した場合に到達不能として扱う流れは、[RFC 1812、3.3.2節](https://www.rfc-editor.org/rfc/rfc1812.html#section-3.3.2)に記載されています。
 
 「NATルーターへ届けば、対応表からPC Aへ戻せる」という理解は合っています。MACが必要なのは、そのNATルーターのWAN側NICへ届ける段階です。技術ごとに分けた[ARPとMACアドレスの文書の追加質問](./basic_security_at_home_20261005_question16_arp_mac_address.md)では、フレームの宛先欄と、MACが分かる場合・分からない場合の分岐図を示しています。
+
+## 追加質問8：M-WANは、PC A・BのルーターのMACアドレスか
+
+> M-WANは、PC A、BのルータのMACアドレスですか？
+
+**はい。正確には、PC A・Bが共有する1台のNATルーターの「WAN側NIC」のMACアドレスです。** PC A・B自身のMACではありません。また、ルーター全体に共通する一つのMACという意味でもありません。この例では、WAN側とLAN側のインターフェースを区別しています。
+
+```text
+ISP側 ─ スイッチ ─ [ WAN側NIC │ 同じNATルーター │ LAN側NIC ] ─ 家庭内LAN
+                    M-WAN                       M-LAN           ├─ PC A：M-A
+                                                                └─ PC B：M-B
+```
+
+`M-WAN`・`M-LAN`・`M-A`・`M-B` は、それぞれのMACを区別する説明用の記号で、実際のMACアドレスの表記ではありません。
+
+| MACの記号 | 指しているもの | この例での配送先 |
+| --- | --- | --- |
+| `M-WAN` | NATルーターのWAN側NIC | ISP側から、そのNATルーターへ渡す |
+| `M-LAN` | 同じNATルーターのLAN側NIC | PCから、LAN内のルーターへ渡す |
+| `M-A` | PC AのLAN側インターフェース | NATルーターから、LAN内のPC Aへ渡す |
+| `M-B` | PC BのLAN側インターフェース | NATルーターから、LAN内のPC Bへ渡す |
+
+ISP側から来る、PC A向けの `.10` 宛ての返答と、PC B向けの `.11` 宛ての返答は、**どちらも宛先MACを `M-WAN` にして同じWAN側NICへ届けます。** NATルーターは受信後に、宛先IPとBasic NATの対応表からA・Bを区別します。LAN側へ渡す際は、その区間のフレームを作り、Aなら宛先MACに `M-A`、Bなら `M-B` を使います（[Cisco公式：NAT用IPへのProxy ARPと返答の変換](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)、[RFC 1812、5.2.1.2節の手順10～11：転送先リンクのフレームを作る](https://www.rfc-editor.org/rfc/rfc1812.html#section-5.2.1.2)）。
+
+## 追加質問9：スイッチはARPを、つながっている全てのルーターへ転送するのか
+
+> スイッチからARPをPC A、Bのルータおよび別のルータに転送していますが、この転送はスイッチにつながっている全てのルータに転送するんですか？
+
+**図のように、それらのルーターが同じVLANの転送可能なポートにつながっていれば、ARP Requestはそれぞれへ転送されます。** 通常のスイッチの規則は、「ARPを受信したポートを除き、同じVLANの他の転送可能なポートへ送る」です。ARP Requestの宛先MACが、ブロードキャスト用の `FF:FF:FF:FF:FF:FF` だからです（[Cisco公式：VLANとブロードキャストの転送規則](https://www.cisco.com/c/en/us/support/docs/lan-switching/ethernet/12006-chapter22.html)）。
+
+- 同じVLANにつながる機器なら、ルーターに加えて、PCやサーバーにも届きます。スイッチが「ルーターだけ」を選んで送るわけではありません。
+- 同じスイッチに物理的につながっていても、別のVLANの機器へは、このARP Requestを転送しません。
+- 問い合わせ元のISP側ルーターにつながる受信ポートへ、同じフレームを送り返すこともしません。
+
+**問い合わせを受信することと、応答することは別です。** この例では、複数機器が問い合わせを受け取りますが、`.10` を担当するNATルーターがProxy ARPで応答します。別のルーターは `.10` を担当しないため応答しません。ISP側はその応答で `M-WAN` を知り、サーバーの返答をそのMAC宛てに送れます（[RFC 826：ブロードキャストするRequestと対象機器のReply](https://datatracker.ietf.org/doc/html/rfc826)、[Cisco公式：NAT用IPへのProxy ARP](https://www.cisco.com/c/en/us/td/docs/security/asa/asa923/configuration/firewall/asa-923-firewall-config/nat-reference.html)）。
+
+また、このWAN側のARP Requestを、NATルーターがLAN側のPC A・Bへそのまま転送するわけではありません。図のPC A・BはWAN側のVLANの機器ではなく、NATルーターの内側にいます。今回のProxy ARPでは、NATルーター自身がWAN側で代理応答します。転送範囲の図と表は、技術ごとに分けた[ARPとMACアドレスの文書の追加質問](./basic_security_at_home_20261005_question16_arp_mac_address.md)に載せています。
 
 次に読む：[疑問16：IPルーティングと転送経路](./basic_security_at_home_20261005_question16_ip_routing.md)、[疑問16：ARPとMACアドレスによるLAN内の配送](./basic_security_at_home_20261005_question16_arp_mac_address.md)。
 
